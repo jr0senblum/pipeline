@@ -4,7 +4,32 @@
 
 
 start() ->
+    What = (pipe("test", list_to_binary(), byte_size())),
+    io:format("Parenthasize: ~p, [~p]~n",[What, What ==4]),
+    II =     if 
+		 true -> 
+		     pipe("test", list_to_binary(), byte_size());
+		 false -> false 
+	     end,
+    io:format("If test: ~p, [~p]~n",[II, II == 4]),
 
+    Catch = (catch pipe("test",
+		  list_to_binary(), 
+		  byte_size(), 
+		  add(_,0))),
+    io:format("Catch test: ~p, [~p]~n",[Catch, Catch == 4]),
+
+    {'EXIT', {Bad, _}} = (catch pipe("test",
+				   list_to_binary(), 
+				   byte_size(), 
+				   add(_,0)) + a),
+    io:format("Catch test with error: ~p, [~p]~n",[Bad, Bad == badarith]),
+
+   Neg = - pipe("test",
+		  list_to_binary(), 
+		  byte_size(), 
+		  add(_,0)),
+    io:format("Negating test: ~p, [~p]~n",[Neg, Neg == -4]),
 
     try 
 	case pipe("test",

@@ -8,8 +8,9 @@
  
      fun3(fun2(7, fun1(InitParameter)), 4)
      
- Currently one can use pipe in: block, call, case, fun, list comprehension, 
- match, operator, try, and try of form expressions. Some examples include
+ Currently one can use pipe in: block, call, case, if, fun, list comprehension, 
+ match, operator, try, try of, and unary opertor form expressions. Some examples
+ include:
 
     pipe(InitParameter,
          fun1(),
@@ -40,7 +41,10 @@
           fun2(7,_),
           fun3(_,X)) || X <- lists:seq(1,10)]
 
-      
+    Catch = (catch pipe("test",
+                        list_to_binary(),
+                        byte_size(),
+                        add(_,0)))
 
  
  

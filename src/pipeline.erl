@@ -38,11 +38,7 @@
 			     erl_parse:abstract_forms().
 
 parse_transform(Forms, _Options) ->
-    io:format("~p~n",[Forms]),
-    A = lists:append(lists:map(fun transform_form/1, Forms)),
-    io:format("~p~n",[A]),
-    A.
-
+    lists:append(lists:map(fun transform_form/1, Forms)).
 
 
 %% -----------------------------------------------------------------------------
@@ -91,15 +87,51 @@ trx_function([Hd|Tl], Acc) ->
 trx_exp([], Acc) ->
     lists:reverse(Acc);
 
-trx_exp([{clause, L, V, [], B} | Tl], Acc) ->
-    trx_exp(Tl, [{clause, L, V, [], trx_exp(B, [])} | Acc]);
+trx_exp([{match, Line, P, E_0} | Tl], Acc) ->
+    trx_exp(Tl, [{match, Line, 
+		   hd(trx_exp([P],[])), 
+		   hd(trx_exp([E_0],[]))} | Acc]);
 
-trx_exp([{'try', Line, B, [], Cs, []} | Tl], Acc) ->
-    trx_exp(Tl, [{'try', Line,
-		  trx_exp(B, []),
-		  [],
-		  trx_exp(Cs, []),
-		  []} | Acc]);
+% Skipping var, tuple, nil, cons, bin, 
+trx_exp([{op, Line, Op, E_1, E_2} | Tl], Acc) ->
+    trx_exp(Tl, [{op, Line, Op, 
+		   hd(trx_exp([E_1],[])), 
+		   hd(trx_exp([E_2],[]))} | Acc]);
+
+trx_exp([{op, Line, Op, E_0} | Tl], Acc) ->
+    trx_exp(Tl, [{op, Line, Op, 
+		   hd(trx_exp([E_0],[]))} | Acc]);
+
+% Skipping record, map
+
+trx_exp([{'catch', Line, E_0} | Tl], Acc) ->
+    trx_exp(Tl, [{'catch', Line, hd(trx_exp([E_0], []))} | Acc]);
+
+% the Call we care about is the pipe(...) call
+trx_exp([{call, Line, {atom, _Line2, pipe}, [Ps |Fns]}|Tl], Acc) ->
+    put(param, Ps),
+    trx_exp(Tl, [hd(pipe_body(lists:reverse(Fns), Line))| Acc]);
+
+% skip other calls 
+
+trx_exp([{lc, Line, E_0, Generators} | Tl], Acc) ->
+    trx_exp(Tl, [{lc, Line, 
+		   hd(trx_exp([E_0],[])), 
+		   Generators} | Acc]);
+
+% skip binary comprehensions
+
+trx_exp([{block, Line, B} | Tl], Acc) ->
+    trx_exp(Tl, [{block, Line, 
+		  trx_exp(B, [])} | Acc]);
+
+trx_exp([{'if', Line, Ics} | Tl], Acc) ->
+    trx_exp(Tl, [{'if', Line, trx_exp(Ics, [])} | Acc]);
+
+trx_exp([{'case', Line, E_0, Cs} | Tl], Acc) ->
+    trx_exp(Tl, [{'case', Line, 
+		  hd(trx_exp([E_0],[])), 
+		  trx_exp(Cs, [])} | Acc]);
 
 trx_exp([{'try', Line, B, Cs, Ds, []} | Tl], Acc) ->
     trx_exp(Tl, [{'try', Line,
@@ -107,38 +139,17 @@ trx_exp([{'try', Line, B, Cs, Ds, []} | Tl], Acc) ->
 		  trx_exp(Cs, []),
 		  trx_exp(Ds, []),
 		  []} | Acc]);
-     
-trx_exp([{lc, Line, Thing, Generators} | Tl], Acc) ->
-    trx_exp(Tl, [{lc, Line, 
-		   hd(trx_exp([Thing],[])), 
-		   Generators} | Acc]);
 
-trx_exp([{'case', Line, Exp, Exps} | Tl], Acc) ->
-    trx_exp(Tl, [{'case', Line, 
-		  hd(trx_exp([Exp],[])), 
-		  trx_exp(Exps, [])} | Acc]);
-
-trx_exp([{block, Line, Thing} | Tl], Acc) ->
-    trx_exp(Tl, [{block, Line, 
-		  trx_exp(Thing, [])} | Acc]);
-
-trx_exp([{op, Line, Op, L1, L2} | Tl], Acc) ->
-    trx_exp(Tl, [{op, Line, Op, 
-		   hd(trx_exp([L1],[])), 
-		   hd(trx_exp([L2],[]))} | Acc]);
-
-trx_exp([{match, Line, L1, L2} | Tl], Acc) ->
-    trx_exp(Tl, [{match, Line, 
-		   hd(trx_exp([L1],[])), 
-		   hd(trx_exp([L2],[]))} | Acc]);
+% skip receive
 
 trx_exp([{'fun', Line, {clauses, Clauses}}|Tl], Acc) ->
     trx_exp(Tl, [{'fun', Line, {clauses, 
 				trx_exp(Clauses,[])}} | Acc]);
 
-trx_exp([{call, Line, {atom, _Line2, pipe}, [Ps |Fns]}|Tl], Acc) ->
-    put(param, Ps),
-    trx_exp(Tl, [hd(pipe_body(lists:reverse(Fns), Line))| Acc]);
+% skip named fun, query and field
+
+trx_exp([{clause, L, Ps, Gs, B} | Tl], Acc) ->
+    trx_exp(Tl, [{clause, L, Ps, Gs, trx_exp(B, [])} | Acc]);
 
 trx_exp([Elt|Tl], Acc) ->
     trx_exp(Tl, [Elt|Acc]);
