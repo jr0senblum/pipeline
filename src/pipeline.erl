@@ -38,7 +38,10 @@
 			     erl_parse:abstract_forms().
 
 parse_transform(Forms, _Options) ->
-    lists:append(lists:map(fun transform_form/1, Forms)).
+    io:format("~p~n",[Forms]),
+    A = lists:append(lists:map(fun transform_form/1, Forms)),
+    io:format("~p~n",[A]),
+    A.
 
 
 
@@ -59,69 +62,93 @@ format_error(E) ->
 
 
 %% -----------------------------------------------------------------------------
-%% Only concenred about 'function' abstract form, ignore the rest
+%% Only concerned with looking within 'function' declarations
 %%
 transform_form({function, Line, Name, Arity, Body}) ->
-    [{function, Line, Name, Arity, [mod_clause(Body, [])]}];
+    [{function, Line, Name, Arity, [trx_function(Body, [])]}];
 
 transform_form(Form) ->
     [Form].
 
 
 %% -----------------------------------------------------------------------------
-%% Only concenred about 'clauses', ignore the rest
+%% Only concenred about 'function clauses', ignore the rest
 %%
-mod_clause([], Acc) -> 
+trx_function([], Acc) -> 
     hd(lists:reverse(Acc));
 
-mod_clause([{clause, Line, L1, L2, Body} | Tl], Acc) ->
-    mod_clause(Tl, [{clause, Line, L1, L2, mod_body(Body,[])} | Acc]);
+trx_function([{clause, Line, L1, L2, Body} | Tl], Acc) ->
+    trx_function(Tl, [{clause, Line, L1, L2, trx_exp(Body,[])} | Acc]);
 
-mod_clause([Hd|Tl], Acc) ->
-    mod_clause(Tl, [Hd|Acc]).
+trx_function([Hd|Tl], Acc) ->
+    trx_function(Tl, [Hd|Acc]).
 
 
 %% -----------------------------------------------------------------------------
-%% pipe can be part of lc, operator, match, fun or call forms.
+%% pipe is valid in: try, try of, list comprehension, case, block, operator,
+%% match, fun and call forms expressions.
 %%
-mod_body([], Acc) ->
+trx_exp([], Acc) ->
     lists:reverse(Acc);
 
+trx_exp([{clause, L, V, [], B} | Tl], Acc) ->
+    trx_exp(Tl, [{clause, L, V, [], trx_exp(B, [])} | Acc]);
 
-mod_body([{lc, Line, Thing, Generators} | Tl], Acc) ->
-    mod_body(Tl, [{lc, Line, 
-		   hd(mod_body([Thing],[])), 
+trx_exp([{'try', Line, B, [], Cs, []} | Tl], Acc) ->
+    trx_exp(Tl, [{'try', Line,
+		  trx_exp(B, []),
+		  [],
+		  trx_exp(Cs, []),
+		  []} | Acc]);
+
+trx_exp([{'try', Line, B, Cs, Ds, []} | Tl], Acc) ->
+    trx_exp(Tl, [{'try', Line,
+		  trx_exp(B, []),
+		  trx_exp(Cs, []),
+		  trx_exp(Ds, []),
+		  []} | Acc]);
+     
+trx_exp([{lc, Line, Thing, Generators} | Tl], Acc) ->
+    trx_exp(Tl, [{lc, Line, 
+		   hd(trx_exp([Thing],[])), 
 		   Generators} | Acc]);
 
-mod_body([{op, Line, Op, L1, L2} | Tl], Acc) ->
-    mod_body(Tl, [{op, Line, Op, 
-		   hd(mod_body([L1],[])), 
-		   hd(mod_body([L2],[]))} | Acc]);
+trx_exp([{'case', Line, Exp, Exps} | Tl], Acc) ->
+    trx_exp(Tl, [{'case', Line, 
+		  hd(trx_exp([Exp],[])), 
+		  trx_exp(Exps, [])} | Acc]);
 
-mod_body([{match, Line, L1, L2} | Tl], Acc) ->
-    mod_body(Tl, [{match, Line, 
-		   hd(mod_body([L1],[])), 
-		   hd(mod_body([L2],[]))} | Acc]);
+trx_exp([{block, Line, Thing} | Tl], Acc) ->
+    trx_exp(Tl, [{block, Line, 
+		  trx_exp(Thing, [])} | Acc]);
 
-mod_body([{'fun', Line, {clauses, Clause}}|Tl], Acc) ->
-    mod_body(Tl, [{'fun', Line, {clauses, 
-				 [{clause, L, V, [], 
-				   mod_body(Rest,[])} || 
-				 {clause, L, V, [], Rest} <- Clause]}} | Acc]);
+trx_exp([{op, Line, Op, L1, L2} | Tl], Acc) ->
+    trx_exp(Tl, [{op, Line, Op, 
+		   hd(trx_exp([L1],[])), 
+		   hd(trx_exp([L2],[]))} | Acc]);
 
-mod_body([{call, Line, {atom, _Line2, pipe}, [Ps |Fns]}|Tl], Acc) ->
+trx_exp([{match, Line, L1, L2} | Tl], Acc) ->
+    trx_exp(Tl, [{match, Line, 
+		   hd(trx_exp([L1],[])), 
+		   hd(trx_exp([L2],[]))} | Acc]);
+
+trx_exp([{'fun', Line, {clauses, Clauses}}|Tl], Acc) ->
+    trx_exp(Tl, [{'fun', Line, {clauses, 
+				trx_exp(Clauses,[])}} | Acc]);
+
+trx_exp([{call, Line, {atom, _Line2, pipe}, [Ps |Fns]}|Tl], Acc) ->
     put(param, Ps),
-    mod_body(Tl, [hd(pipe_body(lists:reverse(Fns), Line))| Acc]);
+    trx_exp(Tl, [hd(pipe_body(lists:reverse(Fns), Line))| Acc]);
 
-mod_body([Elt|Tl], Acc) ->
-    mod_body(Tl, [Elt|Acc]);
+trx_exp([Elt|Tl], Acc) ->
+    trx_exp(Tl, [Elt|Acc]);
 
-mod_body(Elt, Acc) ->
-    mod_body([], [Elt|Acc]).
+trx_exp(Elt, Acc) ->
+    trx_exp([], [Elt|Acc]).
 
 
 %% -----------------------------------------------------------------------------
-%% nest the return value of one as the parameter of the next
+%% Nest the return value of one Fn into the free parameter slot of the next Fn.
 %%
 pipe_body([{call, _Line,{atom, _Line2, Fn}, Params}|[]], Ref) ->
     [{call, Ref, {atom, Ref, Fn}, insert(Params, [], get(param), Ref)}];
@@ -132,11 +159,11 @@ pipe_body([{call, _Line,{atom, _Line2, Fn}, Params}|Tl], Ref)->
 
 
 %% -----------------------------------------------------------------------------
-%% when inserting one as the parameter of the next, do so in the first
-%% '_' space
+%% when inserting a parameter into the form, do so in the first '_' space
+%% updating its line number as appropriate.
 %%
 insert([], [], P, Ref) ->
-    [setelement(2,P,Ref)];
+    [setelement(2, P, Ref)];
 
 insert([], Acc, _P, _Ref) ->
     lists:reverse(Acc);

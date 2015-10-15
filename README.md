@@ -8,14 +8,14 @@
  
      fun3(fun2(7, fun1(InitParameter)), 4)
      
- Currently the following scenarios are supported
+ Currently one can use pipe in: block, call, case, fun, list comprehension, 
+ match, operator, try, and try of form expressions. Some examples include
 
     pipe(InitParameter,
          fun1(),
          fun2(7,_),
          fun3(_,4))
 
-         
 	A = pipe(InitParameter,
          fun1(),
          fun2(7,_),
@@ -38,7 +38,10 @@
     [pipe(InitParameter,
           fun1(),
           fun2(7,_),
-          fun3(_,X)) || X <- lists:seq(1,10)];
+          fun3(_,X)) || X <- lists:seq(1,10)]
+
+      
+
  
  
 ##Usage
