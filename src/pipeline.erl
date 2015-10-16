@@ -112,7 +112,7 @@ trx_exp([{'catch', Line, E_0} | Tl], Acc) ->
 % funcstions with nested returns
 %
 trx_exp([{call, Line, {atom, _Line2, pipe}, [Ps |Fns]}|Tl], Acc) ->
-    put(param, Ps),
+    put(args, Ps),
     trx_exp(Tl, [hd(pipe_body(lists:reverse(Fns), Line))| Acc]);
 
 % skip other calls 
@@ -163,30 +163,41 @@ trx_exp(Elt, Acc) ->
 
 %% -----------------------------------------------------------------------------
 %% Nest the return value of one Fn into the free parameter slot of the next Fn.
+%% Two types of function calls: F() and M:F()
 %%
-pipe_body([{call, _Line,{atom, _Line2, Fn}, Params}|[]], Ref) ->
-    [{call, Ref, {atom, Ref, Fn}, insert(Params, [], get(param), Ref)}];
 
-pipe_body([{call, _Line,{atom, _Line2, Fn}, Params}|Tl], Ref)->
-    [{call, Ref, {atom, Ref, Fn}, 
-      insert(Params, [], hd(pipe_body(Tl, Ref+1)), Ref)}].
+pipe_body([{call, _Line, {remote, _Line, F, M}, A} | []], NewLine) ->
+    Args = get(args),
+    [{call, NewLine, {remote, NewLine, F, M}, insert(A, [], Args, NewLine)}];
+
+pipe_body([{call, _Line,{atom, _Line, F}, A}|[]], NewLine) ->
+    Args = get(args),
+    [{call, NewLine, {atom, NewLine, F}, insert(A, [], Args, NewLine)}];
+
+pipe_body([{call, _Line, {remote, _Line, F, M}, A}|Tl], NewLine) ->
+    [{call, NewLine, {remote, NewLine, F, M}, 
+      insert(A, [], hd(pipe_body(Tl, NewLine+1)), NewLine)}];
+
+pipe_body([{call, _Line,{atom, _Line, F}, A}|Tl], NewLine)->
+    [{call, NewLine, {atom, NewLine, F}, 
+      insert(A, [], hd(pipe_body(Tl, NewLine + 1)), NewLine)}].
 
 
 %% -----------------------------------------------------------------------------
-%% when inserting a parameter into the form, do so in the first '_' space
-%% updating its line number as appropriate.
+%% Iterate through prameters looking for the first one that is _. Replace its
+%% value with P and update its line number.
 %%
-insert([], [], P, Ref) ->
-    [setelement(2, P, Ref)];
+insert([], [], P, NewLine) ->
+    [setelement(2, P, NewLine)];
 
-insert([], Acc, _P, _Ref) ->
+insert([], Acc, _P, _NewLine) ->
     lists:reverse(Acc);
 
-insert([{var, _Line, '_'} | Tl], Acc, P, Ref) ->
-    insert(Tl, [setelement(2,P,Ref)|Acc], P, Ref);
+insert([{var, _Line, '_'} | Tl], Acc, P, NewLine) ->
+    insert(Tl, [setelement(2, P, NewLine) | Acc], P, NewLine);
 
-insert([H|Tl], Acc, P, Ref) ->
-    insert(Tl, [setelement(2, H, Ref)|Acc], P, Ref) .
+insert([H|Tl], Acc, P, NewLine) ->
+    insert(Tl, [setelement(2, H, NewLine)|Acc], P, NewLine).
 
 
 
