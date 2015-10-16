@@ -81,8 +81,9 @@ trx_function([Hd|Tl], Acc) ->
 
 
 %% -----------------------------------------------------------------------------
-%% pipe is valid in: try, try of, list comprehension, case, block, operator,
-%% match, fun and call forms expressions.
+%% Currently one can use pipe in: block, call, case, catch, if, fun, list 
+%% comprehension, match, operator, try, try of, and unary operator form 
+%% expressions.
 %%
 trx_exp([], Acc) ->
     lists:reverse(Acc);
@@ -107,7 +108,9 @@ trx_exp([{op, Line, Op, E_0} | Tl], Acc) ->
 trx_exp([{'catch', Line, E_0} | Tl], Acc) ->
     trx_exp(Tl, [{'catch', Line, hd(trx_exp([E_0], []))} | Acc]);
 
-% the Call we care about is the pipe(...) call
+% the Call we care about is the pipe(...) call. Rewrite it as
+% funcstions with nested returns
+%
 trx_exp([{call, Line, {atom, _Line2, pipe}, [Ps |Fns]}|Tl], Acc) ->
     put(param, Ps),
     trx_exp(Tl, [hd(pipe_body(lists:reverse(Fns), Line))| Acc]);
