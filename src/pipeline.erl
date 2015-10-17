@@ -1,7 +1,7 @@
 %%% ----------------------------------------------------------------------------
 %%% @author Jim Rosenblum
 %%% @copyright (C) 2015 - 2016, Jim Rosenblum
-%%% @doc Parse transform implementing a pipe-lining operator.
+%%% @doc Parse transform implementing a pipe-line function.
 %%% pipe(P1, Fn1(...), Fn2(...), Fn3(...)) will result in
 %%% Fn1 being called with the initial parameter, P1, being used as a 
 %%% parameter for Fn1. That output is used as an input parameter for Fn2 and 
@@ -18,13 +18,16 @@
 %%% will be transformed to
 %%% integer_to_list(add(4,(byte_size(list_to_binary("test"))),5))
 %%%
-%%% An alternative syntax is hacked-in such that if the compile option
+%%% An alternative syntax has been  hacked-in such that if the compile option
 %%% {pipe, true} is supplied, the source file will be re-scanned converting
 %%%
 %%% |> "test" |> list_to_binary |> etc() :| 
 %%% into 
 %%%
 %%% pipe("test", list_to_binary(), etc())
+%%%
+%%% This might not work depending on other parse-parse transforms and included
+%%% macros. Be careful.
 %%%
 %%% @version {@version}
 %%% @end
@@ -76,32 +79,31 @@ format_error(E) ->
 
 
 %% -----------------------------------------------------------------------------
-%% Only concerned with looking within 'function' declarations
+%% Only concerned with looking within 'function' forms.
 %%
 transform_form({function, Line, Name, Arity, Body}) ->
-    [{function, Line, Name, Arity, [trx_function(Body, [])]}];
+    [{function, Line, Name, Arity, trx_function(Body)}];
 
 transform_form(Form) ->
     [Form].
 
 
 %% -----------------------------------------------------------------------------
-%% Only concenred about 'function clauses', ignore the rest
+%% The pipe directive is a function, so only look for it in 'function clauses', 
+%% leave the rest alone.
 %%
-trx_function([], Acc) -> 
-    hd(lists:reverse(Acc));
-
-trx_function([{clause, Line, L1, L2, Body} | Tl], Acc) ->
-    trx_function(Tl, [{clause, Line, L1, L2, trx_exp(Body,[])} | Acc]);
-
-trx_function([Hd|Tl], Acc) ->
-    trx_function(Tl, [Hd|Acc]).
+trx_function(BodyForms) ->
+    lists:map(fun({clause, Line, L1, L2, Body}) ->
+		      {clause, Line, L1, L2, trx_exp(Body,[])};
+		 (Other)  ->
+		      Other
+	      end, BodyForms).
 
 
 %% -----------------------------------------------------------------------------
 %% Currently one can use pipe in: block, call, case, catch, if, fun, list 
 %% comprehension, match, operator, try, try of, and unary operator form 
-%% expressions.
+%% expressions. Look for pipe in one of those places.
 %%
 trx_exp([], Acc) ->
     lists:reverse(Acc);
@@ -126,8 +128,8 @@ trx_exp([{op, Line, Op, E_0} | Tl], Acc) ->
 trx_exp([{'catch', Line, E_0} | Tl], Acc) ->
     trx_exp(Tl, [{'catch', Line, hd(trx_exp([E_0], []))} | Acc]);
 
-% the Call we care about is the pipe(...) call. Rewrite it as
-% funcstions with nested returns
+% The Call we care about is the pipe(...) call. Re-write it as
+% nested functions.
 %
 trx_exp([{call, Line, {atom, _Line2, pipe}, [Ps |Fns]}|Tl], Acc) ->
     put(args, Ps),
@@ -203,8 +205,9 @@ pipe_body([{call, _Line,{atom, _Line, F}, A}|Tl], NewLine)->
 
 %% -----------------------------------------------------------------------------
 %% Iterate through prameters looking for the first one that is _. Replace its
-%% value with P and update its line number.
-%%
+%% value with P and update its line number. If there are not parameters, then
+%% the fn must be arity 1 and create the parameter tuple.
+%%%
 insert([], [], P, NewLine) ->
     [setelement(2, P, NewLine)];
 
@@ -219,6 +222,13 @@ insert([H|Tl], Acc, P, NewLine) ->
 
 
 
+%%% -----------------------------------------------------------------------------
+%%% Functions to support the alternative suntax which requires re-tokenizing the
+%%% file, replacing the |> ... :| tokens with pipe(....).
+%%% -----------------------------------------------------------------------------
+
+
+% Parse out the name of the source file so that it can be scanned.
 get_file_name([{attribute, 1, file, {FileName,_}} | _]) ->    
     FileName;
 get_file_name([_|Tl]) -> 
@@ -238,12 +248,13 @@ transform(File) ->
 		Y end,
     [F(X) || X <- F2].
 
+
 scan({done, {ok, Tokens, EndLoc}, LeftOver}, Acc) ->
     scan(erl_scan:tokens([], LeftOver, EndLoc), [Tokens | Acc]);
 scan(_, Acc) ->
     lists:reverse(Acc).
 
-
+% looke for the token and rewrite them as necessary.
 form_transform([], Acc, _Started) ->    
     lists:reverse(Acc);
 
