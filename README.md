@@ -74,7 +74,7 @@ into
      pipe("test", list_to_binary(), etc())
 
 Notice that the file will be re-scanned in the parse-transform and, therefore,
-other transforms and incldued Macros might not place nicely.
+other transforms and incldued Macros might not play nicely.
 
 ##Usage
 Make sure the parse_transform file, pipeline.erl, is compiled as part of your project
