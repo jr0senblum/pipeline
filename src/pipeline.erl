@@ -18,6 +18,14 @@
 %%% will be transformed to
 %%% integer_to_list(add(4,(byte_size(list_to_binary("test"))),5))
 %%%
+%%% An alternative syntax is hacked-in such that if the compile option
+%%% {pipe, true} is supplied, the source file will be re-scanned converting
+%%%
+%%% |> "test" |> list_to_binary |> etc() :| 
+%%% into 
+%%%
+%%% pipe("test", list_to_binary(), etc())
+%%%
 %%% @version {@version}
 %%% @end
 %%% Created : 14 October 2015 by Jim Rosenblum
@@ -37,8 +45,19 @@
 -spec parse_transform(erl_parse:abstract_forms(), options()) -> 
 			     erl_parse:abstract_forms().
 
-parse_transform(Forms, _Options) ->
-    lists:append(lists:map(fun transform_form/1, Forms)).
+parse_transform(Forms, Options) ->
+    NewForms = case alternative_syntax(Options) of
+	true ->
+	    FileName = get_file_name(Forms),
+	    transform(FileName);
+	false ->
+	    Forms
+    end,
+    lists:append(lists:map(fun transform_form/1, NewForms)).
+
+
+alternative_syntax(Options) ->
+    proplists:lookup(pipe, Options) == {pipe, true}.
 
 
 %% -----------------------------------------------------------------------------
@@ -54,7 +73,6 @@ format_error(E) ->
         _ ->
             io_lib:write(E)
     end.
-
 
 
 %% -----------------------------------------------------------------------------
@@ -201,17 +219,42 @@ insert([H|Tl], Acc, P, NewLine) ->
 
 
 
+get_file_name([{attribute, 1, file, {FileName,_}} | _]) ->    
+    FileName;
+get_file_name([_|Tl]) -> 
+    get_file_name(Tl).
+		     
     
+%% -----------------------------------------------------------------------------
+%% Re-scan the file converting the list of tokens such that the |> ... :|
+%% syntax is re-written into the pipe(....) tokens
+%%
+transform(File) ->
+    {ok, B} = file:read_file(File),
+    Forms = scan(erl_scan:tokens([],binary_to_list(B),1),[]),
+    F2 = lists:map(fun(AForm) -> form_transform(AForm, [], false) end, Forms),
+    F = fun(X) ->
+		{ok,Y} = erl_parse:parse_form(X),
+		Y end,
+    [F(X) || X <- F2].
+
+scan({done, {ok, Tokens, EndLoc}, LeftOver}, Acc) ->
+    scan(erl_scan:tokens([], LeftOver, EndLoc), [Tokens | Acc]);
+scan(_, Acc) ->
+    lists:reverse(Acc).
 
 
+form_transform([], Acc, _Started) ->    
+    lists:reverse(Acc);
 
+form_transform([{'|', Line}, {'>' ,_} | Tl], Acc, false) -> 
+    form_transform(Tl, [{'(', Line}, {atom, Line, pipe}	| Acc], true);
 
+form_transform([{'|', Line},{'>',_} |Tl], Acc, true) -> 
+    form_transform(Tl, [{',', Line} | Acc], true);
 
+form_transform([{':', Line}, {'|', _} | Tl], Acc, true) -> 
+    form_transform(Tl, [{')', Line} | Acc], false);
 
-    
-    
-    
-
-
-
-
+form_transform([H | Tl], Acc, Started) ->
+    form_transform(Tl, [H | Acc], Started).
