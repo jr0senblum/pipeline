@@ -13,11 +13,11 @@ Given
 
     pipe(InitP, Fn1, Fn2, ..., FnN)
 
-The result of Fn1(InitP) will be given to Fn2 as its first _free_ parameter. The result
-of that function wil be passed to Fn3 in its first _free_ parameter and so on.
-A function's _free_ parameter is either the only parameter
-in a function with arity 1 or it is replaces the first instance of _ in a  function's
-parameter list.
+This is really a functional compose: The result of Fn1(InitP) will be given to
+Fn2 as its first _free_ parameter. The result of that wil be passed to Fn3 in 
+its first _free_ parameter and so on. A function's _free_ parameter is either 
+the only parameter (function of arity 1) or it the parameter indicated by the 
+first instance of _ in its parameter list.
 
 Examples will make this more clear. It's an easy concept whose explanation I 
 have butchered.
