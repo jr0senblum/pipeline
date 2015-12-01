@@ -26,7 +26,7 @@
 %%%
 %%% pipe("test", list_to_binary(), etc())
 %%%
-%%% This might not work depending on other parse-parse transforms and included
+%%% This might not work depending on other parse transforms and included
 %%% macros. Be careful.
 %%%
 %%% @version {@version}
